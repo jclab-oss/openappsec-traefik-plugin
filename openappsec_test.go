@@ -120,7 +120,10 @@ func newTestEnv(t *testing.T, config *Config, upstream http.Handler) (*testEnv, 
 	if err != nil {
 		t.Fatalf("failed to create middleware: %v", err)
 	}
-	return &testEnv{daemon: daemon, middleware: middleware, upstream: upstream}, daemonServer.Close
+	// The cleanup is wrapped in a closure on purpose: returning the bound
+	// method value (daemonServer.Close) directly panics in Yaegi.
+	cleanup := func() { daemonServer.Close() }
+	return &testEnv{daemon: daemon, middleware: middleware, upstream: upstream}, cleanup
 }
 
 func doRequest(env *testEnv, method, target, body string) *httptest.ResponseRecorder {
