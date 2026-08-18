@@ -57,15 +57,31 @@ type daemonClient struct {
 	httpClient *http.Client
 }
 
+// maxDaemonConns bounds the pool of connections kept open to the daemon.
+// Inspecting one request takes several calls — start, each body chunk, the
+// response stages — so the default idle-connection limit of two per host makes
+// almost every call dial anew. Under load that churn is what starves the
+// connection pool and makes calls fail, which either fails open (traffic goes
+// uninspected) or fails closed (traffic is rejected), depending on config.
+const maxDaemonConns = 512
+
+func newTransport(dial func(ctx context.Context, network, addr string) (net.Conn, error)) *http.Transport {
+	return &http.Transport{
+		DialContext:         dial,
+		MaxIdleConns:        maxDaemonConns,
+		MaxIdleConnsPerHost: maxDaemonConns,
+		MaxConnsPerHost:     maxDaemonConns,
+		IdleConnTimeout:     90 * time.Second,
+	}
+}
+
 func newDaemonClient(addr string, timeout time.Duration) *daemonClient {
 	if strings.HasPrefix(addr, "unix://") {
 		socketPath := strings.TrimPrefix(addr, "unix://")
-		transport := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var dialer net.Dialer
-				return dialer.DialContext(ctx, "unix", socketPath)
-			},
-		}
+		transport := newTransport(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, "unix", socketPath)
+		})
 		return &daemonClient{
 			baseURL:    "http://openappsec-daemon",
 			httpClient: &http.Client{Transport: transport, Timeout: timeout},
@@ -73,7 +89,7 @@ func newDaemonClient(addr string, timeout time.Duration) *daemonClient {
 	}
 	return &daemonClient{
 		baseURL:    strings.TrimSuffix(addr, "/"),
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: &http.Client{Transport: newTransport(nil), Timeout: timeout},
 	}
 }
 
@@ -89,7 +105,15 @@ func (c *daemonClient) do(method, path, contentType string, body io.Reader) (*ve
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// A connection only goes back to the pool once its body is read to EOF and
+	// closed. The decoder stops at the end of the JSON value and leaves the
+	// trailing newline behind, which is enough to keep the connection out of
+	// the pool and force the next call to dial again.
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("daemon returned status %d", resp.StatusCode)
 	}
@@ -157,6 +181,6 @@ func (c *daemonClient) finiSession(sid uint32) {
 	if err != nil {
 		return
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 }

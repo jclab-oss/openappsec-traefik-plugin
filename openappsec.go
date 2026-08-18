@@ -153,7 +153,7 @@ func writeBlock(rw http.ResponseWriter, block *blockResponse) {
 	rw.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	rw.WriteHeader(code)
 	if body != "" {
-		_, _ = rw.Write([]byte(body))
+		rw.Write([]byte(body))
 	}
 }
 
@@ -171,12 +171,8 @@ func (m *Middleware) buildStartRequest(req *http.Request) *startRequest {
 
 	listeningIP := "0.0.0.0"
 	var listeningPort uint16
-	// The nil check is not redundant: Yaegi (the traefik plugin interpreter)
-	// panics on a comma-ok type assertion of a nil interface value.
-	if v := req.Context().Value(http.LocalAddrContextKey); v != nil {
-		if localAddr, ok := v.(net.Addr); ok {
-			listeningIP, listeningPort = splitHostPort(localAddr.String())
-		}
+	if localAddr, ok := req.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
+		listeningIP, listeningPort = splitHostPort(localAddr.String())
 	}
 	if listeningPort == 0 {
 		if req.TLS != nil {

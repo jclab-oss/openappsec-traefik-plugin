@@ -120,10 +120,7 @@ func newTestEnv(t *testing.T, config *Config, upstream http.Handler) (*testEnv, 
 	if err != nil {
 		t.Fatalf("failed to create middleware: %v", err)
 	}
-	// The cleanup is wrapped in a closure on purpose: returning the bound
-	// method value (daemonServer.Close) directly panics in Yaegi.
-	cleanup := func() { daemonServer.Close() }
-	return &testEnv{daemon: daemon, middleware: middleware, upstream: upstream}, cleanup
+	return &testEnv{daemon: daemon, middleware: middleware, upstream: upstream}, daemonServer.Close
 }
 
 func doRequest(env *testEnv, method, target, body string) *httptest.ResponseRecorder {
@@ -471,9 +468,7 @@ func TestMidStreamResponseDropAbortsConnection(t *testing.T) {
 	env.daemon.replies["response-body"] = verdictReply{Verdict: verdictDrop}
 
 	defer func() {
-		// Compared by message: Yaegi rewraps the panic value, so the recovered
-		// value is not necessarily the http.ErrAbortHandler error itself.
-		if r := recover(); r == nil || fmt.Sprint(r) != http.ErrAbortHandler.Error() {
+		if r := recover(); r != http.ErrAbortHandler {
 			t.Fatalf("expected ErrAbortHandler panic, got %v", r)
 		}
 	}()
