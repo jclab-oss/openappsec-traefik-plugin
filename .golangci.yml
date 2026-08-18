@@ -1,0 +1,36 @@
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - revive
+    - unconvert
+  settings:
+    misspell:
+      locale: US
+    revive:
+      rules:
+        # traefik's plugin API fixes the New(ctx, next, config, name) signature,
+        # and http.Handler test stubs legitimately ignore parameters.
+        - name: unused-parameter
+          disabled: true
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

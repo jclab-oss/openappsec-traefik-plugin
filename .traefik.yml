@@ -1,0 +1,7 @@
+displayName: open-appsec WAF
+type: middleware
+import: github.com/jclab-oss/openappsec-traefik-plugin
+summary: Inspects HTTP traffic with the open-appsec nano agent (machine-learning based WAF).
+testData:
+  daemonAddr: http://127.0.0.1:8579
+  responseInspection: true
